@@ -3,16 +3,23 @@ import json
 from threading import Thread
 from itertools import chain
 from queue import Queue
-from google.cloud.speech_v2 import SpeechClient
-from google.cloud.speech_v2.types import cloud_speech
-from google.api_core.client_options import ClientOptions
+from typing import Generator
+from google.api_core import client_options
+from google.cloud.speech_v2 import SpeechClient, StreamingRecognitionFeatures, StreamingRecognizeRequest, RecognitionConfig, AutoDetectDecodingConfig, StreamingRecognitionConfig
 from google.oauth2.service_account import Credentials
+from proto import enums
+
+PROJECT_ID = "auto-translate-478321"
+REGION = "us"
 
 
 def get_speech_client():
     credentials = os.getenv("GOOGLE_CREDENTIALS")
 
-    return SpeechClient(credentials=Credentials.from_service_account_info(json.loads(credentials)))
+    return SpeechClient(
+        credentials=Credentials.from_service_account_info(json.loads(credentials)),
+        client_options=client_options.ClientOptions(api_endpoint=f"{REGION}-speech.googleapis.com"),
+    )
 
 
 class Transcribe:
@@ -44,20 +51,35 @@ class Transcribe:
         thread.start()
 
     def transcribe(self):
-        recognition_config = cloud_speech.RecognitionConfig(
-            auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
-            language_codes=["en-us"],
+        recognition_config = RecognitionConfig(
+            auto_decoding_config=AutoDetectDecodingConfig(),
+            language_codes=["en-US"],
             model="chirp_3",
         )
-        streaming_config = cloud_speech.StreamingRecognitionConfig(config=recognition_config)
-        config_request = cloud_speech.StreamingRecognizeRequest(streaming_config=streaming_config)
+        streaming_config = StreamingRecognitionConfig(config=recognition_config)
+        config_request = StreamingRecognizeRequest(
+            recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_", streaming_config=streaming_config
+        )
 
-        audio_generator = self._generator()
+        audio_requests = (StreamingRecognizeRequest(audio=audio) for audio in self._generator())
 
-        requests = (cloud_speech.StreamingRecognizeRequest(audio=audio) for audio in audio_generator)
+        def requests(
+            config: StreamingRecognizeRequest, audio: Generator[StreamingRecognizeRequest, None, None]
+        ):
+            yield config
+            try:
+                for audio_request in audio:
+                    print('running...')
+                    yield audio_request
+            except Exception as e:
+                print(repr(e))
+                raise
 
-        responses = self.client.streaming_recognize(requests=chain([config_request], requests))
+
+        # responses = self.client.streaming_recognize(requests=chain([config_request], requests))
+        responses = self.client.streaming_recognize(requests=requests(config_request, audio_requests))
 
         for response in responses:
             for result in response.results:
-                print(result.alternatives[0].transcript)
+                if result.is_final:
+                    print(result.alternatives[0].transcript)
