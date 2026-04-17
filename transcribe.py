@@ -3,18 +3,22 @@ import json
 from threading import Thread
 from itertools import chain
 from queue import Queue
-from typing import Generator
 from google.api_core import client_options
-from google.cloud.speech_v2 import SpeechClient, StreamingRecognitionFeatures, StreamingRecognizeRequest, RecognitionConfig, AutoDetectDecodingConfig, StreamingRecognitionConfig
+from google.cloud.speech_v2 import (
+    SpeechClient,
+    StreamingRecognizeRequest,
+    RecognitionConfig,
+    AutoDetectDecodingConfig,
+    StreamingRecognitionConfig,
+)
 from google.oauth2.service_account import Credentials
-from proto import enums
 
 PROJECT_ID = "auto-translate-478321"
 REGION = "us"
 
 
 def get_speech_client():
-    credentials = os.getenv("GOOGLE_CREDENTIALS")
+    credentials = os.getenv("GOOGLE_CREDENTIALS") or ""
 
     return SpeechClient(
         credentials=Credentials.from_service_account_info(json.loads(credentials)),
@@ -58,28 +62,21 @@ class Transcribe:
         )
         streaming_config = StreamingRecognitionConfig(config=recognition_config)
         config_request = StreamingRecognizeRequest(
-            recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_", streaming_config=streaming_config
+            recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+            streaming_config=streaming_config,
         )
 
-        audio_requests = (StreamingRecognizeRequest(audio=audio) for audio in self._generator())
+        audio_requests = (
+            StreamingRecognizeRequest(
+                audio=audio,
+            )
+            for audio in self._generator()
+        )
 
-        def requests(
-            config: StreamingRecognizeRequest, audio: Generator[StreamingRecognizeRequest, None, None]
-        ):
-            yield config
-            try:
-                for audio_request in audio:
-                    print('running...')
-                    yield audio_request
-            except Exception as e:
-                print(repr(e))
-                raise
-
-
-        # responses = self.client.streaming_recognize(requests=chain([config_request], requests))
-        responses = self.client.streaming_recognize(requests=requests(config_request, audio_requests))
+        responses = self.client.streaming_recognize(requests=chain([config_request], audio_requests))
 
         for response in responses:
+            print(response)
             for result in response.results:
                 if result.is_final:
                     print(result.alternatives[0].transcript)
