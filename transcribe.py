@@ -6,15 +6,24 @@ from queue import Queue
 from google.api_core import client_options
 from google.cloud.speech_v2 import (
     SpeechClient,
+    StreamingRecognitionFeatures,
     StreamingRecognizeRequest,
     RecognitionConfig,
     AutoDetectDecodingConfig,
     StreamingRecognitionConfig,
+    TranslationConfig,
 )
 from google.oauth2.service_account import Credentials
 
 PROJECT_ID = "auto-translate-478321"
+
+# Chirp 3
+MODEL = "chirp_3"
 REGION = "us"
+
+# Chirp 2
+# MODEL = "chirp_2"
+# REGION = "us-central1"
 
 
 def get_speech_client():
@@ -58,9 +67,12 @@ class Transcribe:
         recognition_config = RecognitionConfig(
             auto_decoding_config=AutoDetectDecodingConfig(),
             language_codes=["en-US"],
-            model="chirp_3",
+            model=MODEL,
         )
-        streaming_config = StreamingRecognitionConfig(config=recognition_config)
+        streaming_config = StreamingRecognitionConfig(
+            config=recognition_config,
+            streaming_features=StreamingRecognitionFeatures(interim_results=True),
+        )
         config_request = StreamingRecognizeRequest(
             recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
             streaming_config=streaming_config,
