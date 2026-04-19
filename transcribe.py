@@ -1,8 +1,6 @@
 import os
 import json
-from threading import Thread
 from itertools import chain
-from queue import Queue
 from google.api_core import client_options
 from google.cloud.speech_v2 import (
     SpeechClient,
@@ -11,9 +9,9 @@ from google.cloud.speech_v2 import (
     RecognitionConfig,
     AutoDetectDecodingConfig,
     StreamingRecognitionConfig,
-    TranslationConfig,
 )
 from google.oauth2.service_account import Credentials
+from dataclasses import dataclass
 
 PROJECT_ID = "auto-translate-478321"
 
@@ -27,7 +25,10 @@ REGION = "us"
 
 
 def get_speech_client():
-    credentials = os.getenv("GOOGLE_CREDENTIALS") or ""
+    credentials = os.getenv("GOOGLE_CREDENTIALS")
+
+    if credentials is None:
+        raise Exception("'GOOGLE_CREDENTIALS' not set")
 
     return SpeechClient(
         credentials=Credentials.from_service_account_info(json.loads(credentials)),
@@ -35,60 +36,47 @@ def get_speech_client():
     )
 
 
-class Transcribe:
-    def __init__(self, client: SpeechClient) -> None:
-        self.client = client
+@dataclass
+class Transcript:
+    interm_text: str = ""
+    final_text: str = ""
 
-        self._buff = Queue()
-        self.closed = False
+    def add_text(self, text: str, final: bool):
+        self.interm_text = ""
 
-    def push(self, data):
-        self._buff.put(data)
+        if final:
+            self.final_text += text
+        else:
+            self.interm_text = text
 
-    def __enter__(self):
-        self.closed = False
-        return self
 
-    def __exit__(self, *args, **kwargs):
-        self.closed = True
-        self._buff = Queue()
+def transcribe(audio_chunks, client: SpeechClient):
+    recognition_config = RecognitionConfig(
+        auto_decoding_config=AutoDetectDecodingConfig(),
+        language_codes=["en-US"],
+        model=MODEL,
+    )
+    streaming_config = StreamingRecognitionConfig(
+        config=recognition_config,
+        streaming_features=StreamingRecognitionFeatures(interim_results=True),
+    )
+    config_request = StreamingRecognizeRequest(
+        recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+        streaming_config=streaming_config,
+    )
 
-    def _generator(self):
-        while not self.closed:
-            next_data = self._buff.get()
-            yield next_data
-
-    def thread_transcribe(self):
-        thread = Thread(target=self.transcribe)
-
-        thread.start()
-
-    def transcribe(self):
-        recognition_config = RecognitionConfig(
-            auto_decoding_config=AutoDetectDecodingConfig(),
-            language_codes=["en-US"],
-            model=MODEL,
+    audio_requests = (
+        StreamingRecognizeRequest(
+            audio=audio,
         )
-        streaming_config = StreamingRecognitionConfig(
-            config=recognition_config,
-            streaming_features=StreamingRecognitionFeatures(interim_results=True),
-        )
-        config_request = StreamingRecognizeRequest(
-            recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
-            streaming_config=streaming_config,
-        )
+        for audio in audio_chunks
+    )
 
-        audio_requests = (
-            StreamingRecognizeRequest(
-                audio=audio,
-            )
-            for audio in self._generator()
-        )
+    responses = client.streaming_recognize(requests=chain([config_request], audio_requests))
 
-        responses = self.client.streaming_recognize(requests=chain([config_request], audio_requests))
-
-        for response in responses:
-            print(response)
-            for result in response.results:
-                if result.is_final:
-                    print(result.alternatives[0].transcript)
+    transcript = Transcript()
+    for response in responses:
+        print(response)
+        for result in response.results:
+            transcript.add_text(result.alternatives[0].transcript, result.is_final)
+            yield transcript
