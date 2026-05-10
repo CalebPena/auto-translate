@@ -10,15 +10,15 @@ speech_client = get_speech_client()
 ai_client = get_ai_client()
 
 
-def echo(websocket: ServerConnection):
-    with Manager(speech_client, ai_client) as manager:
+def translate_socket(websocket: ServerConnection):
+    with Manager(speech_client, ai_client, websocket) as manager:
         manager.run()
         for message in websocket:
             manager.push(message)
 
 
 def main():
-    with serve(echo, "localhost", 8765) as server:
+    with serve(translate_socket, "localhost", 8765) as server:
         print("Server Starting")
         server.serve_forever()
 

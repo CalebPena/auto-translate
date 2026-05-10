@@ -13,6 +13,8 @@ from google.cloud.speech_v2 import (
 from google.oauth2.service_account import Credentials
 from dataclasses import dataclass
 
+from utils import ThreadedGenFunc
+
 PROJECT_ID = "auto-translate-478321"
 
 # Chirp 3
@@ -50,6 +52,7 @@ class Transcript:
             self.interm_text = text
 
 
+@ThreadedGenFunc
 def transcribe(audio_chunks, client: SpeechClient):
     recognition_config = RecognitionConfig(
         auto_decoding_config=AutoDetectDecodingConfig(),

@@ -5,6 +5,7 @@ from openai import OpenAI
 import os
 
 from transcribe import Transcript
+from utils import ThreadedGenFunc
 
 MODEL = "openai/gpt-oss-safeguard-20b:nitro"
 
@@ -50,7 +51,7 @@ def system_prompt():
             ],
         ),
         "",
-        "And your responce should be in the following format as json:",
+        "And your response should be in the following format as json:",
         json.dumps(
             {
                 "translations": {
@@ -67,6 +68,7 @@ def system_prompt():
         "but should feel empowered to change it if the underlying meaning has changed.",
         "3. The source language may change, and the agent should continue providing translations in all target languages listed in <langs>.",
         "4. The agent should only return valid json, that can be immediatly passed into JSON.stringify without causing an error.",
+        "5. The agent should return translations in the same order that they appear in <langs>.",
     )
 
 
@@ -94,6 +96,7 @@ def prompt(system: str, user: str, client: OpenAI):
     return res
 
 
+@ThreadedGenFunc
 def translate(transcript: Generator[Transcript], langs: list[str], client: OpenAI):
     prev_translation = [Translated(l, "") for l in langs]
 

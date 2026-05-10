@@ -1,20 +1,23 @@
+import json
 from threading import Thread
 from queue import Queue
 
 from google.cloud.speech_v2 import SpeechClient
 from openai import OpenAI
+from websockets.sync.server import ServerConnection
 
 from transcribe import transcribe
 from translate import translate
 
 
 class Manager:
-    def __init__(self, speech_client: SpeechClient, ai_client: OpenAI) -> None:
+    def __init__(self, speech_client: SpeechClient, ai_client: OpenAI, socket: ServerConnection) -> None:
         self._buff = Queue()
         self.closed = False
 
         self._speech_client = speech_client
         self._ai_client = ai_client
+        self._socket = socket
 
         self.langs = ["en", "es", "ar"]
 
@@ -40,6 +43,10 @@ class Manager:
         thread.start()
 
     def _flow(self):
-        transcript = transcribe(self._generator(), self._speech_client)
-        translation = translate(transcript, self.langs, self._ai_client)
-        print(translation)
+        transcripts = transcribe(self._generator(), self._speech_client)
+        translations = translate(transcripts, self.langs, self._ai_client)
+
+        for translation in translations:
+            data = json.dumps({"translations": {t.lang: t.text for t in translation}})
+            print(data)
+            self._socket.send(data)
